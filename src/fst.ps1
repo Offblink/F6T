@@ -90,23 +90,12 @@ if (-not $Path) {
 # ---- Sixel capability check ----
 if ($Sixel) {
     $sixelOk = $false
-    # Check 1: Windows Terminal with Sixel enabled in settings
-    if ($env:WT_SESSION) {
-        $wtSettings = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
-        if (Test-Path $wtSettings) {
-            $json = Get-Content $wtSettings -Raw | ConvertFrom-Json
-            $enabled = $json.profiles.defaults.'experimental.enableSixel'
-            if ($enabled -eq $true) {
-                $sixelOk = $true
-            }
-        }
-    }
-    # Check 2: Known Sixel-capable terminals (xterm, WezTerm, foot)
+    # Only trust env vars the terminal itself sets
     if ($env:TERM -match 'xterm|wezterm|foot') { $sixelOk = $true }
     if ($env:TERM_PROGRAM -eq 'WezTerm') { $sixelOk = $true }
 
     if (-not $sixelOk) {
-        Write-Host "[Sixel not available -- your terminal lacks Sixel support or it is disabled.]" -ForegroundColor Yellow
+        Write-Host "[Sixel not available -- your terminal does not report Sixel support.]" -ForegroundColor Yellow
         Write-Host "[Falling back to ANSI. Remove -Sixel flag to suppress this message.]" -ForegroundColor DarkGray
         Write-Host ""
         $Sixel = $false
