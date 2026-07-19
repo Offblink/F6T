@@ -82,9 +82,28 @@ if ($srcDir -ne $installDir) {
         Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     Copy-Item $srcDir $installDir -Recurse -Force
+
+    # Ensure bin directory exists
+    $binDir = "$installDir\bin"
+    if (-not (Test-Path $binDir)) {
+        New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+    }
 }
 
-# 5. Set up uninstall function
+# 5. Save Python path for fst.ps1
+"$python" | Out-File -FilePath "$installDir\python.txt" -Encoding ascii -Force
+
+# 6. Register bin directory in user PATH
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (-not $currentPath) { $currentPath = "" }
+if ($currentPath -notlike "*$binDir*") {
+    Write-Host "Adding $binDir to user PATH..." -ForegroundColor Cyan
+    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$binDir", "User")
+    # Update current session too
+    $env:Path = "$env:Path;$binDir"
+}
+
+# 7. Set up uninstall function (removes PATH entry too)
 $uninstallFunc = @"
 
 ##### F6T-Uninstall #####
@@ -94,10 +113,16 @@ function global:fst-uninstall {
         Remove-Item "$installDir" -Recurse -Force
         Write-Host "  Removed $installDir" -ForegroundColor Green
     }
+    # Remove from PATH
+    `$currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not `$currentPath) { `$currentPath = "" }
+    `$newPath = (`$currentPath -split ";" | Where-Object { `$_ -notlike "*F6T\bin*" }) -join ";"
+    [Environment]::SetEnvironmentVariable("Path", `$newPath, "User")
+    Write-Host "  Removed F6T from PATH" -ForegroundColor Green
+    # Remove from profile
     `$profile = `$PROFILE
     if (Test-Path `$profile) {
         `$content = Get-Content `$profile -Raw
-        # Remove F6T block
         `$lines = `$content -split "\r?\n"
         `$start = -1; `$end = -1
         for (`$i = 0; `$i -lt `$lines.Count; `$i++) {
@@ -111,78 +136,20 @@ function global:fst-uninstall {
             Write-Host "  Removed F6T from profile" -ForegroundColor Green
         }
     }
-    Write-Host "F6T uninstalled. Restart PowerShell." -ForegroundColor Cyan
+    Write-Host "F6T uninstalled. Restart terminal." -ForegroundColor Cyan
 }
 "@
 
-# 6. Build fst function
+# 8. Build fst function (thin wrapper -> fst.ps1)
 $fstFunc = @"
 
 ##### F6T — FFmpeg + Sixel -> Terminal #####
 function global:fst {
-    param(
-        [string]`$Path,
-        [int]`$Width,
-        [int]`$Fps = 15,
-        [int]`$Colors = 32,
-        [switch]`$Ansi,
-        [switch]`$Help
-    )
-    if (`$Help -or `$Path -eq "-h" -or `$Path -eq "--help" -or `$Path -eq "/?") {
-        Write-Host @'
-F6T — FFmpeg + Sixel -> Terminal
-
-Usage:  fst <file> [-Ansi] [-Width N] [-Fps N] [-Colors N] [-Help]
-
-  <file>        Image or video file path
-  -Ansi         Use ANSI half-block mode (universal, no Sixel terminal needed)
-  -Width N      Output width in characters (image: 300, video: 200 default)
-  -Fps N        Target frame rate for video (default 15)
-  -Colors N     Palette size for Sixel mode, 8-256 (default 32)
-  -Help         Show this help
-
-Examples:
-  fst photo.jpg                    # Sixel image display
-  fst photo.jpg -Ansi              # ANSI image (zero config)
-  fst video.mp4                    # Sixel video playback
-  fst video.mp4 -Ansi -Width 100   # ANSI video, compact
-  fst video.mp4 -Width 300 -Fps 24 # Sixel HD
-
-Uninstall:  fst-uninstall
-'@
-        return
-    }
-    if (-not `$Path) {
-        Write-Host "Usage: fst <file> [-Ansi] [-Width N] [-Fps N] [-Colors N]"
-        Write-Host "       fst -Help"
-        return
-    }
-    `$py = "$python"
-    `$src = "$installDir\src"
-    `$ext = [IO.Path]::GetExtension(`$Path).ToLower()
-    `$isVideo = @('.mp4','.mkv','.avi','.mov','.webm','.flv','.wmv','.ts') -contains `$ext
-
-    if (`$Ansi) {
-        if (`$isVideo) {
-            `$w = if (`$Width) { `$Width } else { 120 }
-            & `$py `$src\play_video.py `$Path -a -w `$w -f `$Fps
-        } else {
-            `$w = if (`$Width) { `$Width } else { 150 }
-            & `$py `$src\show_img_ansi.py `$Path -w `$w
-        }
-    } else {
-        if (`$isVideo) {
-            `$w = if (`$Width) { `$Width } else { 200 }
-            & `$py `$src\play_video.py `$Path -w `$w -f `$Fps -c `$Colors
-        } else {
-            `$w = if (`$Width) { `$Width } else { 300 }
-            & `$src\show_img.ps1 -ImagePath `$Path -MaxWidth `$w -MaxColors `$Colors
-        }
-    }
+    & "$installDir\src\fst.ps1" @args
 }
 "@
 
-# 7. Add to profile
+# 9. Add to profile
 $profileDir = Split-Path $PROFILE -Parent
 if (-not (Test-Path $profileDir)) {
     New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
@@ -223,10 +190,11 @@ if ($existing) {
 
 Write-Host "Profile updated: $PROFILE" -ForegroundColor Green
 Write-Host ""
-Write-Host "=== Done! Restart PowerShell, then: ===" -ForegroundColor Cyan
+Write-Host "=== Done! Restart terminal, then: ===" -ForegroundColor Cyan
 Write-Host "  fst $installDir\examples\demo.png" -ForegroundColor White
 Write-Host "  fst C:\path\to\video.mp4" -ForegroundColor White
 Write-Host "  fst C:\path\to\image.jpg -Ansi" -ForegroundColor White
 Write-Host "  fst -Help" -ForegroundColor White
 Write-Host ""
-Write-Host "Uninstall:  fst-uninstall" -ForegroundColor DarkGray
+Write-Host "Works in PowerShell AND cmd.exe" -ForegroundColor Green
+Write-Host "Uninstall:  fst-uninstall  (PowerShell)" -ForegroundColor DarkGray
