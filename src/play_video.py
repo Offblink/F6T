@@ -19,23 +19,11 @@ import argparse
 from PIL import Image
 from sixel_encoder import encode_sixel_bytes
 
-# ── Console Output (bypass stdout capture) ─────────────────────────
-STD_OUTPUT_HANDLE = -11
-if sys.platform == "win32":
-    import ctypes
-    from ctypes import wintypes
-    kernel32 = ctypes.windll.kernel32
-    
-    def write_console(data: bytes):
-        """用 WriteFile 直写控制台——不做字符处理，适合 Sixel 二进制"""
-        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-        written = wintypes.DWORD(0)
-        buf = (ctypes.c_char * len(data))(*data)
-        kernel32.WriteFile(handle, buf, len(data), ctypes.byref(written), None)
-else:
-    def write_console(data: bytes):
-        sys.stdout.buffer.write(data)
-        sys.stdout.buffer.flush()
+# ── Console Output ──────────────────────────────────────────────────
+def write_console(data: bytes):
+    """直写 stdout buffer — 兼容 conpty，ESC 不会被吞"""
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
 
 
 
