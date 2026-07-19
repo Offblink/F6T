@@ -10,13 +10,13 @@
 param(
     [string]$Path,
     [int]$Width,
+    [int]$Res,
     [int]$Fps = 15,
     [int]$Colors = 32,
     [switch]$Ansi,
     [switch]$Sixel,
     [switch]$Help
 )
-
 # ---- Resolve install paths ----
 $installDir = "$env:LOCALAPPDATA\F6T"
 if (-not (Test-Path $installDir)) {
@@ -53,22 +53,23 @@ if (-not $py -or -not (Test-Path $py)) {
 }
 $src = "$installDir\src"
 
-# ---- Help ----
 if ($Help -or $Path -eq "-h" -or $Path -eq "--help" -or $Path -eq "/?") {
     Write-Host @'
 F6T -- FFmpeg + Sixel -> Terminal
 
-Usage:  fst <file> [-Sixel] [-Width N] [-Fps N] [-Colors N] [-Help]
+Usage:  fst <file> [-Sixel] [-Width N] [-Res N] [-Fps N] [-Colors N] [-Help]
 
   <file>        Image or video file path
   -Sixel        Use Sixel mode (requires Sixel-capable terminal)
-  -Width N      Output width (default: fits terminal window)
+  -Width N      Output width in characters (default: fits terminal)
+  -Res N        Output width in pixels — higher = better quality (no cap)
   -Fps N        Target frame rate for video (default 15)
   -Colors N     Palette size for Sixel mode, 8-256 (default 32)
   -Help         Show this help
 
 Default is ANSI half-block mode (works everywhere).
-Width auto-fits your terminal window. Use -Width to override.
+Width auto-fits your terminal window. Use -Width or -Res to override.
+-Res allows higher decode resolution (e.g. -Res 720 for HD quality).
 Use -Sixel in Windows Terminal 1.22+, xterm, WezTerm, or foot.
 
 Examples:
@@ -76,6 +77,8 @@ Examples:
   fst photo.jpg -Sixel              # Sixel (high quality)
   fst video.mp4                     # ANSI video, auto-fit
   fst video.mp4 -Width 80           # ANSI video, smaller
+  fst video.mp4 -Res 480            # ANSI video, SD decode
+  fst photo.jpg -Res 720            # ANSI, HD decode quality
 
 Uninstall:  fst-uninstall  (PowerShell only)
 '@
@@ -98,15 +101,19 @@ function Get-TermWidth {
     catch { try { return [Console]::WindowWidth - 4 } catch { return 120 } }
 }
 
+$explicitWidth = $Width
 if (-not $Width) {
     $tw = Get-TermWidth
     if ($isVideo) {
-        $Width = [Math]::Min($tw, 200)
+        $Width = $tw
     } else {
-        $cap = if ($Sixel) { 500 } else { 300 }
+        $cap = if ($Sixel) { 800 } else { 600 }
         $Width = [Math]::Min($tw, $cap)
     }
 }
+
+# ---- Resolution override ----
+if ($Res) { $Width = $Res }
 
 # ---- Sixel capability check ----
 if ($Sixel) {
@@ -131,8 +138,19 @@ if ($Sixel) {
 } else {
     if ($isVideo) {
         if (-not $env:WT_SESSION -and -not ($env:TERM -match 'xterm|wezterm|foot')) {
-            Write-Host "[Video needs a modern terminal (Windows Terminal, xterm, WezTerm). cmd.exe will not render correctly.]" -ForegroundColor Red
-            exit 1
+            # Not in a modern terminal — auto-launch one
+            $launchArgs = "& '$src\fst.ps1' -Path '$Path'"
+            if ($explicitWidth) { $launchArgs += " -Width $explicitWidth" }
+            if ($Fps -and $Fps -ne 15) { $launchArgs += " -Fps $Fps" }
+            if ($Res) { $launchArgs += " -Res $Res" }
+            if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
+                Write-Host "[Video] Launching in Windows Terminal..." -ForegroundColor Yellow
+                Start-Process wt.exe -ArgumentList "powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command `"$launchArgs`""
+            } else {
+                Write-Host "[Video] Launching in new PowerShell window..." -ForegroundColor Yellow
+                Start-Process powershell.exe -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -Command `"$launchArgs`""
+            }
+            exit 0
         }
         & $py "$src\play_video.py" $Path -a -w $Width -f $Fps
     } else {

@@ -1,4 +1,3 @@
-
 """
 Terminal Video Player — Sixel 终端视频播放器
 用法: python play-video.py <video.mp4> [-w 200] [-f 15] [-c 32]
@@ -135,18 +134,17 @@ def get_video_info(path):
 
 
 # ── Player ─────────────────────────────────────────────────────────
-def _compute_dims(orig_w, orig_h, max_width):
-    """计算输出尺寸，限制最大高度以适配终端"""
+def _compute_dims(orig_w, orig_h, max_width, max_height=None):
+    """Compute output dimensions fitting constraints, maintaining aspect ratio."""
     if orig_w > max_width:
         ratio = max_width / orig_w
         out_w = max_width
         out_h = max(int(orig_h * ratio) // 2 * 2, 2)
     else:
         out_w, out_h = orig_w, max(orig_h // 2 * 2, 2)
-    max_h = 60
-    if out_h > max_h:
-        ratio = max_h / out_h
-        out_h = max_h // 2 * 2
+    if max_height and out_h > max_height:
+        ratio = max_height / out_h
+        out_h = max_height // 2 * 2
         out_w = max(int(out_w * ratio) // 2 * 2, 2)
     return out_w, out_h
 
@@ -166,12 +164,23 @@ def _get_term_width():
     except Exception:
         return None
 
+def _get_term_height():
+    """获取终端高度（行数），失败返回 None"""
+    try:
+        return os.get_terminal_size().lines
+    except Exception:
+        return None
+
 def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
     info = get_video_info(path)
     orig_w, orig_h = info["width"], info["height"]
 
-    out_w, out_h = _compute_dims(orig_w, orig_h, max_width)
+    max_h = _get_term_height()
+    if max_h:
+        max_h = max(max_h * 2, 10)  # rows -> pixels (ANSI: 1 row = 2px)
+    out_w, out_h = _compute_dims(orig_w, orig_h, max_width, max_h)
     fps = min(target_fps, info["fps"]) if info["fps"] > 0 else target_fps
+    total_frames = int(info["duration"] * fps) if info["duration"] else 0
     frame_time = 1.0 / fps
     frame_bytes = out_w * out_h * 3
 
@@ -202,8 +211,11 @@ def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
             new_tw = _get_term_width()
             if new_tw and last_tw and abs(new_tw - last_tw) >= 5:
                 last_tw = new_tw
-                new_w = min(new_tw - 4, 200)
-                new_out_w, new_out_h = _compute_dims(orig_w, orig_h, new_w)
+                new_w = new_tw - 4
+                new_h = _get_term_height()
+                if new_h:
+                    new_h = max(new_h * 2, 10)
+                new_out_w, new_out_h = _compute_dims(orig_w, orig_h, new_w, new_h)
                 if (new_out_w, new_out_h) != (out_w, out_h):
                     proc.terminate()
                     try: proc.communicate(timeout=1)
@@ -213,7 +225,6 @@ def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
                     proc = _spawn_ffmpeg(path, out_w, out_h, fps)
                     write_console(b"\x1b[2J\x1b[H")
                     write_console(f"  [resized to {out_w}x{out_h}]\r\n".encode())
-                    # Skip the rest of this frame to avoid reading wrong byte count
                     continue
             elif new_tw:
                 last_tw = new_tw
@@ -231,17 +242,13 @@ def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
             write_console(frame_data)
             frame_count += 1
 
-            # 进度条
+            # 标题栏进度
             if total_frames:
                 pct = min(frame_count / total_frames * 100, 100)
-                bar_w = 20
-                filled = int(bar_w * frame_count / total_frames)
-                bar = "\u2588" * filled + "\u2591" * (bar_w - filled)
-                prog = f"  {bar} {pct:.0f}% [{frame_count}/{total_frames}]"
+                title = f"F6T [{frame_count}/{total_frames}] {pct:.0f}% - {os.path.basename(path)}"
             else:
-                prog = f"  [{frame_count} frames]"
-            write_console(prog.encode())
-            write_console(b"\x1b[K")
+                title = f"F6T [{frame_count} frames] - {os.path.basename(path)}"
+            write_console(f"\x1b]0;{title}\x07".encode())
 
             elapsed = time.perf_counter() - t_start
             if elapsed < frame_time:

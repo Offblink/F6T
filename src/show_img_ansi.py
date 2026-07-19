@@ -12,11 +12,9 @@ def encode_ansi(path, max_width=150):
     if w > max_width:
         ratio = max_width / w
         w = max_width
-        h = max(int(h * ratio * 0.5), 1)
-        img = img.resize((w, h * 2), Image.LANCZOS)
-    else:
-        h = max(h // 2 * 2, 2)
-        img = img.resize((w, h), Image.LANCZOS)
+        h = int(h * ratio)
+    h = max(h // 2 * 2, 2)
+    img = img.resize((w, h), Image.LANCZOS)
 
     pixels = img.load()
     lines = []
