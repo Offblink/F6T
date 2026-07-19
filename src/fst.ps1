@@ -62,19 +62,20 @@ Usage:  fst <file> [-Sixel] [-Width N] [-Fps N] [-Colors N] [-Help]
 
   <file>        Image or video file path
   -Sixel        Use Sixel mode (requires Sixel-capable terminal)
-  -Width N      Output width in characters (ANSI: 150, Sixel: 300 default)
+  -Width N      Output width (default: fits terminal window)
   -Fps N        Target frame rate for video (default 15)
   -Colors N     Palette size for Sixel mode, 8-256 (default 32)
   -Help         Show this help
 
 Default is ANSI half-block mode (works everywhere).
+Width auto-fits your terminal window. Use -Width to override.
 Use -Sixel in Windows Terminal 1.22+, xterm, WezTerm, or foot.
 
 Examples:
   fst photo.jpg                     # ANSI (universal)
   fst photo.jpg -Sixel              # Sixel (high quality)
-  fst video.mp4                     # ANSI video
-  fst video.mp4 -Sixel -Width 300   # Sixel video HD
+  fst video.mp4                     # ANSI video, auto-fit
+  fst video.mp4 -Width 80           # ANSI video, smaller
 
 Uninstall:  fst-uninstall  (PowerShell only)
 '@
@@ -86,33 +87,27 @@ if (-not $Path) {
     Write-Host "       fst -Help"
     exit 0
 }
+# ---- Auto-detect terminal width ----
+function Get-TermWidth {
+    try { return (Get-Host).UI.RawUI.WindowSize.Width - 4 }
+    catch { try { return [Console]::WindowWidth - 4 } catch { return 120 } }
+}
 
-# ---- Sixel capability check ----
-if ($Sixel) {
-    $sixelOk = $false
-    # Only trust env vars the terminal itself sets
-    if ($env:TERM -match 'xterm|wezterm|foot') { $sixelOk = $true }
-    if ($env:TERM_PROGRAM -eq 'WezTerm') { $sixelOk = $true }
-
-    if (-not $sixelOk) {
-        Write-Host "[Sixel not available -- your terminal does not report Sixel support.]" -ForegroundColor Yellow
-        Write-Host "[Falling back to ANSI. Remove -Sixel flag to suppress this message.]" -ForegroundColor DarkGray
-        Write-Host ""
-        $Sixel = $false
+if (-not $Width) {
+    $tw = Get-TermWidth
+    if ($isVideo) {
+        $Width = [Math]::Min($tw, 200)   # cap video at 200 to keep fps reasonable
+    } else {
+        $Width = [Math]::Min($tw, if ($Sixel) { 500 } else { 300 })
     }
 }
 
 # ---- Dispatch ----
-$ext = [IO.Path]::GetExtension($Path).ToLower()
-$isVideo = @('.mp4','.mkv','.avi','.mov','.webm','.flv','.wmv','.ts') -contains $ext
-
 if ($Sixel) {
     if ($isVideo) {
-        $w = if ($Width) { $Width } else { 200 }
-        & $py "$src\play_video.py" $Path -w $w -f $Fps -c $Colors
+        & $py "$src\play_video.py" $Path -w $Width -f $Fps -c $Colors
     } else {
-        $w = if ($Width) { $Width } else { 300 }
-        & "$src\show_img.ps1" -ImagePath $Path -MaxWidth $w -MaxColors $Colors
+        & "$src\show_img.ps1" -ImagePath $Path -MaxWidth $Width -MaxColors $Colors
     }
 } else {
     if ($isVideo) {
@@ -121,10 +116,8 @@ if ($Sixel) {
             Write-Host "[Install Windows Terminal: winget install Microsoft.WindowsTerminal]" -ForegroundColor DarkGray
             exit 1
         }
-        $w = if ($Width) { $Width } else { 120 }
-        & $py "$src\play_video.py" $Path -a -w $w -f $Fps
+        & $py "$src\play_video.py" $Path -a -w $Width -f $Fps
     } else {
-        $w = if ($Width) { $Width } else { 150 }
-        & $py "$src\show_img_ansi.py" $Path -w $w
+        & $py "$src\show_img_ansi.py" $Path -w $Width
     }
 }
