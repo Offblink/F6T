@@ -135,95 +135,118 @@ def get_video_info(path):
 
 
 # ── Player ─────────────────────────────────────────────────────────
-def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
-    info = get_video_info(path)
-    orig_w, orig_h = info["width"], info["height"]
-    
+def _compute_dims(orig_w, orig_h, max_width):
+    """计算输出尺寸，限制最大高度以适配终端"""
     if orig_w > max_width:
         ratio = max_width / orig_w
         out_w = max_width
         out_h = max(int(orig_h * ratio) // 2 * 2, 2)
     else:
         out_w, out_h = orig_w, max(orig_h // 2 * 2, 2)
-
-    # Cap height so frame fits in terminal window (header + footer take ~3 lines)
-    max_h = 60   # generous; adjust via -w to shrink both dimensions
+    max_h = 60
     if out_h > max_h:
         ratio = max_h / out_h
         out_h = max_h // 2 * 2
         out_w = max(int(out_w * ratio) // 2 * 2, 2)
-        write_console(f"  (scaled to fit: {out_w}x{out_h})\r\n".encode())
+    return out_w, out_h
+
+def _spawn_ffmpeg(path, out_w, out_h, fps):
+    """启动 FFmpeg 解码管道"""
+    return subprocess.Popen(
+        ["ffmpeg", "-v", "error", "-i", path,
+         "-vf", f"scale={out_w}:{out_h},fps={fps}",
+         "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+
+def _get_term_width():
+    """获取终端宽度（列数），失败返回 None"""
+    try:
+        return os.get_terminal_size().columns
+    except Exception:
+        return None
+
+def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
+    info = get_video_info(path)
+    orig_w, orig_h = info["width"], info["height"]
+
+    out_w, out_h = _compute_dims(orig_w, orig_h, max_width)
     fps = min(target_fps, info["fps"]) if info["fps"] > 0 else target_fps
     frame_time = 1.0 / fps
     frame_bytes = out_w * out_h * 3
-    
-    # 片头信息
+
+    # 片头
     mode_label = "ANSI" if mode == "ansi" else "Sixel"
     write_console(b"\x1b[2J\x1b[H")
-    lines = [
+    for line in [
         f"  Terminal Video Player ({mode_label})",
         f"  File: {os.path.basename(path)}",
         f"  Source: {orig_w}x{orig_h} @ {info['fps']:.1f}fps",
         f"  Output: {out_w}x{out_h} @ {fps:.0f}fps, {max_colors} colors",
-        f"  Press Ctrl+C to stop",
+        f"  Press Ctrl+C to stop | Resize terminal to adapt",
         f"",
-    ]
-    for line in lines:
+    ]:
         write_console((line + "\r\n").encode())
-    time.sleep(1.5)
-    
-    # 清屏准备
+    time.sleep(1.2)
     write_console(b"\x1b[2J\x1b[H")
-    
-    # FFmpeg 解码管道（不限速，Python 控帧率）
-    ffmpeg_cmd = [
-        "ffmpeg", "-v", "error",
-        "-i", path,
-        "-vf", f"scale={out_w}:{out_h},fps={fps}",
-        "-pix_fmt", "rgb24",
-        "-f", "rawvideo", "-"
-    ]
-    
-    proc = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    
+
+    proc = _spawn_ffmpeg(path, out_w, out_h, fps)
     frame_count = 0
-    total_frames = int(info["duration"] * fps) if info["duration"] else None
-    
+    last_tw = _get_term_width()
+
     try:
         while True:
             t_start = time.perf_counter()
-            
+
+            # --- Responsive resize check ---
+            new_tw = _get_term_width()
+            if new_tw and last_tw and abs(new_tw - last_tw) >= 5:
+                last_tw = new_tw
+                new_w = min(new_tw - 4, 200)
+                new_out_w, new_out_h = _compute_dims(orig_w, orig_h, new_w)
+                if (new_out_w, new_out_h) != (out_w, out_h):
+                    proc.terminate()
+                    try: proc.communicate(timeout=1)
+                    except: proc.kill(); proc.communicate()
+                    out_w, out_h = new_out_w, new_out_h
+                    frame_bytes = out_w * out_h * 3
+                    proc = _spawn_ffmpeg(path, out_w, out_h, fps)
+                    write_console(b"\x1b[2J\x1b[H")
+                    write_console(f"  [resized to {out_w}x{out_h}]\r\n".encode())
+                    # Skip the rest of this frame to avoid reading wrong byte count
+                    continue
+            elif new_tw:
+                last_tw = new_tw
+
             raw = proc.stdout.read(frame_bytes)
             if len(raw) < frame_bytes:
                 break
-            
+
             if mode == "ansi":
                 frame_data = encode_ansi_data(raw, out_w, out_h)
             else:
                 frame_data = encode_sixel_bytes(raw, out_w, out_h, max_colors)
-            
+
             write_console(b"\x1b[H")
             write_console(frame_data)
-            
             frame_count += 1
-            
+
             # 进度条
             if total_frames:
                 pct = min(frame_count / total_frames * 100, 100)
-                bar_w = 30
+                bar_w = 20
                 filled = int(bar_w * frame_count / total_frames)
-                bar = "█" * filled + "░" * (bar_w - filled)
+                bar = "\u2588" * filled + "\u2591" * (bar_w - filled)
                 prog = f"  {bar} {pct:.0f}% [{frame_count}/{total_frames}]"
             else:
                 prog = f"  [{frame_count} frames]"
-            write_console((prog).encode())
-            write_console(b"\x1b[K")  # 清行尾
-            
-            # 帧率控制
+            write_console(prog.encode())
+            write_console(b"\x1b[K")
+
             elapsed = time.perf_counter() - t_start
             if elapsed < frame_time:
                 time.sleep(frame_time - elapsed)
-    
+
     except KeyboardInterrupt:
         pass
     finally:
@@ -242,7 +265,6 @@ def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
                     write_console(f"  {line.strip()}\r\n".encode())
         else:
             write_console(f"\r\nDone. {frame_count} frames.\r\n".encode())
-
 
 # ── CLI ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
