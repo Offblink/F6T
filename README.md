@@ -3,10 +3,10 @@
 > 在终端里看图、播视频。基于 Sixel 协议，用 FFmpeg 解码、Python 编码、stdout 直出。
 
 ```
-fst video.mp4                     # 视频 → 终端
-fst photo.jpg                      # 图片 → 终端
-fst video.mp4 -Ansi                 # 零配置 ANSI 保底
-fst video.mp4 -Width 300 -Fps 24    # 调参数
+fst photo.jpg                     # 图片 → 终端（ANSI，零配置）
+fst video.mp4                     # 视频 → 终端（ANSI，零配置）
+fst photo.jpg -Sixel              # 图片 → Sixel 高清
+fst video.mp4 -Width 80           # 调参数
 ```
 
 ## 安装
@@ -30,33 +30,33 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ## 用法
 
 ```
-fst <文件> [-Ansi] [-Width N] [-Fps N] [-Colors N] [-Help]
+fst <文件> [-Sixel] [-Width N] [-Fps N] [-Colors N] [-Help]
 ```
 
-`fst` 根据文件后缀自动区分图片/视频。非 Windows Terminal 环境自动切 ANSI 模式（可强制用 `-Ansi`）。
+`fst` 根据文件后缀自动区分图片/视频。默认 ANSI 半块字符模式，无需任何配置。
 
 ### 参数
 
 | 参数 | 适用 | 默认值 | 说明 |
 |---|---|---|---|
-| `-Width` | 图/视频 | 图300, 视频200 | 输出宽度（高度等比） |
+| `-Width` | 图/视频 | 自动适配终端 | 输出宽度（高度等比） |
 | `-Fps` | 视频 | 15 | 目标帧率 |
 | `-Colors` | Sixel 模式 | 32 | 调色板颜色数 (8-256) |
-| `-Ansi` | 全部 | 自动检测 | 切到 ANSI 半块字符模式 |
+| `-Sixel` | 全部 | 否 | 切到 Sixel 模式（需终端支持） |
 | `-Help` | — | — | 显示帮助 |
 
 ### 示例
 
 ```powershell
-# 图片
+# 图片（默认 ANSI，自动适配窗口宽度）
 fst C:\photo.jpg
-fst C:\photo.jpg -Width 500 -Colors 64
-fst C:\photo.jpg -Ansi                   # 零配置
+fst C:\photo.jpg -Sixel              # Sixel 高清
+fst C:\photo.jpg -Width 500          # 指定宽度
 
-# 视频
+# 视频（默认 ANSI，自动适配窗口，缩放终端时实时跟随）
 fst C:\video.mp4
-fst C:\video.mp4 -Width 300 -Fps 24
-fst C:\video.mp4 -Ansi -Width 100 -Fps 10  # 低配流畅
+fst C:\video.mp4 -Width 80           # 小窗播放
+fst C:\video.mp4 -Sixel              # Sixel 模式
 ```
 
 ### 卸载
@@ -65,7 +65,7 @@ fst C:\video.mp4 -Ansi -Width 100 -Fps 10  # 低配流畅
 fst-uninstall
 ```
 
-清除 profile 中的函数、安装目录和 PATH 条目。
+清除 profile 函数、安装目录和 PATH 条目。
 
 ## 原理
 
@@ -76,26 +76,32 @@ video.mp4  →  rawvideo   →  Pillow 量化  →  Sixel 转义码  →  Window
              rgb24 bytes     + Sixel 编码     (ESC P q ...)    / xterm / WezTerm
                                                  │
                              ANSI 备选:          ├  cmd /c type
-                             每▄ = 2像素          │  (图片: 二进制文件→终端)
+                             每▄ = 2像素          │  (图片: 临时文件→终端)
                              前景+背景真彩色      │
-                                                 └  WriteConsole
+                                                 └  sys.stdout
                                                     (视频: 逐帧直写)
 ```
 
 ## 终端支持
 
-| 终端 | Sixel | ANSI |
+| 终端 | 默认 ANSI | Sixel |
 |---|---|---|
-| Windows Terminal 1.22+ | ✅（需启用） | ✅ |
-| xterm | ✅ | ✅ |
-| WezTerm | ✅ | ✅ |
-| foot | ✅ | ✅ |
-| VS Code / Alacritty | ❌ | ✅ |
-| ConEmu / cmd.exe | ❌ | ✅ |
+| Windows Terminal | ✅ | 需终端支持 |
+| xterm / WezTerm / foot | ✅ | ✅（自动检测） |
+| VS Code / Alacritty | ✅ | ❌ |
+| cmd.exe（图片） | ✅ | ❌ |
+| cmd.exe（视频） | ❌ 需 WT | ❌ |
 
-Windows Terminal 启用 Sixel：`设置 → 呈现 → 启用 Sixel 图形支持`。
+- 默认 ANSI 模式，所有现代终端通用
+- `-Sixel` 会检测终端能力，不支持时自动回退并提示
+- cmd.exe 视频不支持（ANSI 转义序列不兼容），需用 Windows Terminal
 
-非 Windows Terminal 环境（cmd.exe、ConEmu 等）`fst` 会自动回退到 ANSI 模式，显示 `[Auto ANSI ...]` 提示。
+## 特性
+
+- **自动适配终端尺寸**：图片和视频默认填充终端窗口宽度，视频播放时缩放窗口实时跟随
+- **Python 路径智能探测**：自动跳过 WindowsApps 存根，支持 pythoncore 和 Python3 安装
+- **Sixel 能力检测**：`-Sixel` 在无支持终端会自动回退并提示
+- **一键卸载**：`fst-uninstall` 清理所有痕迹
 
 ## 对比 FFmpeg 原生的 iterm2 muxer
 
@@ -110,7 +116,7 @@ F6T 是外部脚本调用 FFmpeg 管道，有进程间数据拷贝和 Pillow 量
 ## 限制
 
 - 无音频
-- Sixel 需终端支持（没开用 `-Ansi` 或等自动回退）
+- Sixel 需终端支持（`-Sixel` 模式下自动检测并回退）
 - Python 编码瓶颈：200px 约 15fps
 
 ## 文件结构
@@ -125,8 +131,8 @@ f6t/
 ├── src/
 │   ├── fst.ps1              # 主入口（PS & cmd 共用）
 │   ├── sixel_encoder.py     # Sixel 编码核心（支持文件和内存输入）
-│   ├── play_video.py        # 视频播放器（复用 sixel_encoder）
-│   ├── show_img.ps1         # Sixel 图片显示（cmd /c 直出二进制）
+│   ├── play_video.py        # 视频播放器（复用 sixel_encoder，支持实时缩放）
+│   ├── show_img.ps1         # Sixel 图片显示（cmd /c type 直出二进制）
 │   ├── show_img_ansi.ps1    # ANSI 图片显示（薄 wrapper）
 │   └── show_img_ansi.py     # ANSI 图片编码（Python CLI）
 ├── docs/
