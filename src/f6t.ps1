@@ -4,8 +4,8 @@
     Display images and video in the terminal via Sixel or ANSI.
 .DESCRIPTION
     Both PowerShell and cmd.exe compatible.
-    PowerShell:  fst <file> [-Ansi] [-Width N] ...
-    cmd.exe:     fst <file> [-Ansi] [-Width N] ...
+    PowerShell:  f6t <file> [-Ansi] [-Width N] ...
+    cmd.exe:     f6t <file> [-Ansi] [-Width N] ...
 #>
 param(
     [string]$Path,
@@ -57,7 +57,7 @@ if ($Help -or $Path -eq "-h" -or $Path -eq "--help" -or $Path -eq "/?") {
     Write-Host @'
 F6T -- FFmpeg + Sixel -> Terminal
 
-Usage:  fst <file> [-Sixel] [-Width N] [-Res N] [-Fps N] [-Colors N] [-Help]
+Usage:  f6t <file> [-Sixel] [-Width N] [-Res N] [-Fps N] [-Colors N] [-Help]
 
   <file>        Image or video file path
   -Sixel        Use Sixel mode (requires Sixel-capable terminal)
@@ -73,21 +73,21 @@ Width auto-fits your terminal window. Use -Width or -Res to override.
 Use -Sixel in Windows Terminal 1.22+, xterm, WezTerm, or foot.
 
 Examples:
-  fst photo.jpg                     # ANSI (universal)
-  fst photo.jpg -Sixel              # Sixel (high quality)
-  fst video.mp4                     # ANSI video, auto-fit
-  fst video.mp4 -Width 80           # ANSI video, smaller
-  fst video.mp4 -Res 480            # ANSI video, SD decode
-  fst photo.jpg -Res 720            # ANSI, HD decode quality
+  f6t photo.jpg                     # ANSI (universal)
+  f6t photo.jpg -Sixel              # Sixel (high quality)
+  f6t video.mp4                     # ANSI video, auto-fit
+  f6t video.mp4 -Width 80           # ANSI video, smaller
+  f6t video.mp4 -Res 480            # ANSI video, SD decode
+  f6t photo.jpg -Res 720            # ANSI, HD decode quality
 
-Uninstall:  fst-uninstall  (PowerShell only)
+Uninstall:  f6t-uninstall  (PowerShell only)
 '@
     exit 0
 }
 # ---- No input ----
 if (-not $Path) {
-    Write-Host "Usage: fst <file> [-Ansi] [-Width N] [-Fps N] [-Colors N]"
-    Write-Host "       fst -Help"
+    Write-Host "Usage: f6t <file> [-Ansi] [-Width N] [-Fps N] [-Colors N]"
+    Write-Host "       f6t -Help"
     exit 0
 }
 
@@ -139,7 +139,7 @@ if ($Sixel) {
     if ($isVideo) {
         if (-not $env:WT_SESSION -and -not ($env:TERM -match 'xterm|wezterm|foot')) {
             # Not in a modern terminal — auto-launch one
-            $launchArgs = "& '$src\fst.ps1' -Path '$Path'"
+            $launchArgs = "& '$src\f6t.ps1' -Path '$Path'"
             if ($explicitWidth) { $launchArgs += " -Width $explicitWidth" }
             if ($Fps -and $Fps -ne 15) { $launchArgs += " -Fps $Fps" }
             if ($Res) { $launchArgs += " -Res $Res" }

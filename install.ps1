@@ -2,7 +2,7 @@
 # Run: powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # Installs F6T by copying source to a permanent location,
-# adding the `fst` function to your PowerShell profile,
+# adding the `f6t` function to your PowerShell profile,
 # and ensuring Python + Pillow dependencies are met.
 
 $ErrorActionPreference = "Continue"
@@ -90,7 +90,7 @@ if ($srcDir -ne $installDir) {
     }
 }
 
-# 5. Save Python path for fst.ps1
+# 5. Save Python path for f6t.ps1
 "$python" | Out-File -FilePath "$installDir\python.txt" -Encoding ascii -Force
 
 # 6. Register bin directory in user PATH
@@ -107,7 +107,7 @@ if ($currentPath -notlike "*$binDir*") {
 $uninstallFunc = @"
 
 ##### F6T-Uninstall #####
-function global:fst-uninstall {
+function global:f6t-uninstall {
     Write-Host "Removing F6T..." -ForegroundColor Yellow
     if (Test-Path "$installDir") {
         Remove-Item "$installDir" -Recurse -Force
@@ -140,12 +140,12 @@ function global:fst-uninstall {
 }
 "@
 
-# 8. Build fst function (thin wrapper -> fst.ps1)
-$fstFunc = @"
+# 8. Build f6t function (thin wrapper -> f6t.ps1)
+$f6tFunc = @"
 
 ##### F6T — FFmpeg + Sixel -> Terminal #####
-function global:fst {
-    & "$installDir\src\fst.ps1" @args
+function global:f6t {
+    & "$installDir\src\f6t.ps1" @args
 }
 "@
 
@@ -181,7 +181,7 @@ if ($hasF6T -or $hasUninstall) {
     $existing = ($newLines -join "`r`n").TrimEnd()
 }
 
-$fullBlock = "`r`n$uninstallFunc`r`n$fstFunc"
+$fullBlock = "`r`n$uninstallFunc`r`n$f6tFunc"
 if ($existing) {
     [IO.File]::WriteAllText($PROFILE, $existing + $fullBlock)
 } else {
@@ -191,10 +191,10 @@ if ($existing) {
 Write-Host "Profile updated: $PROFILE" -ForegroundColor Green
 Write-Host ""
 Write-Host "=== Done! Restart terminal, then: ===" -ForegroundColor Cyan
-Write-Host "  fst $installDir\examples\demo.png" -ForegroundColor White
-Write-Host "  fst C:\path\to\video.mp4" -ForegroundColor White
-Write-Host "  fst C:\path\to\image.jpg -Ansi" -ForegroundColor White
-Write-Host "  fst -Help" -ForegroundColor White
+Write-Host "  f6t $installDir\examples\demo.png" -ForegroundColor White
+Write-Host "  f6t C:\path\to\video.mp4" -ForegroundColor White
+Write-Host "  f6t C:\path\to\image.jpg -Ansi" -ForegroundColor White
+Write-Host "  f6t -Help" -ForegroundColor White
 Write-Host ""
 Write-Host "Works in PowerShell AND cmd.exe" -ForegroundColor Green
-Write-Host "Uninstall:  fst-uninstall  (PowerShell)" -ForegroundColor DarkGray
+Write-Host "Uninstall:  f6t-uninstall  (PowerShell)" -ForegroundColor DarkGray

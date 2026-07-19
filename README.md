@@ -3,10 +3,10 @@
 > 在终端里看图、播视频。基于 Sixel 协议，用 FFmpeg 解码、Python 编码、stdout 直出。
 
 ```
-fst photo.jpg                     # 图片 → 终端（ANSI，零配置）
-fst video.mp4                     # 视频 → 终端（ANSI，零配置）
-fst photo.jpg -Sixel              # 图片 → Sixel 高清
-fst video.mp4 -Res 480            # 指定解码分辨率
+f6t photo.jpg                     # 图片 → 终端（ANSI，零配置）
+f6t video.mp4                     # 视频 → 终端（ANSI，零配置）
+f6t photo.jpg -Sixel              # 图片 → Sixel 高清
+f6t video.mp4 -Res 480            # 指定解码分辨率
 ```
 
 ## 安装
@@ -18,7 +18,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 依赖：Python 3 + Pillow + FFmpeg。`install.ps1` 自动检查并提示缺失项。
 
 安装后：
-- **PowerShell**：`fst` 函数写入 profile，新开即用
+- **PowerShell**：`f6t` 函数写入 profile，新开即用
 - **cmd.exe**：自动注册 `%LOCALAPPDATA%\F6T\bin` 到 PATH，新开即用
   - cmd.exe 播视频会自动拉起 Windows Terminal 窗口播放
 - 源文件拷贝到 `%LOCALAPPDATA%\F6T`，删掉 clone 的目录不受影响
@@ -31,10 +31,10 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ## 用法
 
 ```
-fst <文件> [-Sixel] [-Width N] [-Res N] [-Fps N] [-Colors N] [-Help]
+f6t <文件> [-Sixel] [-Width N] [-Res N] [-Fps N] [-Colors N] [-Help]
 ```
 
-`fst` 根据文件后缀自动区分图片/视频。默认 ANSI 半块字符模式，无需任何配置。
+`f6t` 根据文件后缀自动区分图片/视频。默认 ANSI 半块字符模式，无需任何配置。
 
 ### 参数
 
@@ -51,21 +51,21 @@ fst <文件> [-Sixel] [-Width N] [-Res N] [-Fps N] [-Colors N] [-Help]
 
 ```powershell
 # 图片（默认 ANSI，自动适配窗口宽度）
-fst C:\photo.jpg
-fst C:\photo.jpg -Sixel              # Sixel 高清
-fst C:\photo.jpg -Width 500          # 指定宽度
+f6t C:\photo.jpg
+f6t C:\photo.jpg -Sixel              # Sixel 高清
+f6t C:\photo.jpg -Width 500          # 指定宽度
 
 # 视频（默认 ANSI，填满终端窗口，缩放终端时实时跟随）
-fst C:\video.mp4
-fst C:\video.mp4 -Width 80           # 小窗播放
-fst C:\video.mp4 -Res 480            # 高分辨率解码
-fst C:\video.mp4 -Sixel              # Sixel 模式
+f6t C:\video.mp4
+f6t C:\video.mp4 -Width 80           # 小窗播放
+f6t C:\video.mp4 -Res 480            # 高分辨率解码
+f6t C:\video.mp4 -Sixel              # Sixel 模式
 ```
 
 ### 卸载
 
 ```powershell
-fst-uninstall
+f6t-uninstall
 ```
 
 清除 profile 函数、安装目录和 PATH 条目。
@@ -109,7 +109,7 @@ FFmpeg 解码                          Python 编码                   终端渲
 - **cmd.exe 自动拉起 WT**：在 cmd.exe 中播视频自动打开 Windows Terminal
 - **Python 路径智能探测**：自动跳过 WindowsApps 存根，支持 pythoncore 和 Python3 安装
 - **Sixel 能力检测**：`-Sixel` 在无支持终端会自动回退并提示
-- **一键卸载**：`fst-uninstall` 清理所有痕迹
+- **一键卸载**：`f6t-uninstall` 清理所有痕迹
 
 ## 对比 FFmpeg 原生的 iterm2 muxer
 
@@ -132,9 +132,9 @@ f6t/
 ├── install.ps1              # 安装脚本
 ├── .gitignore
 ├── bin/
-│   └── fst.cmd              # cmd.exe 入口
+│   └── f6t.cmd              # cmd.exe 入口
 ├── src/
-│   ├── fst.ps1              # 主入口（PS & cmd 共用）
+│   ├── f6t.ps1              # 主入口（PS & cmd 共用）
 │   ├── sixel_encoder.py     # Sixel 编码核心（支持文件和内存输入）
 │   ├── play_video.py        # 视频播放器（复用 sixel_encoder，支持实时缩放）
 │   ├── show_img.ps1         # Sixel 图片显示（cmd /c type 直出二进制）
