@@ -75,15 +75,17 @@ fst-uninstall
 ```
 FFmpeg 解码                          Python 编码                   终端渲染
 ─────────────            ─────────────           ─────────
-video.mp4  →  rawvideo   →  Pillow 量化  →  Sixel 转义码  →  Windows Terminal
-             rgb24 bytes     + Sixel 编码     (ESC P q ...)    / xterm / WezTerm
+图片/视频   →  rawvideo   →  Pillow →  Sixel 转义码  →  Windows Terminal
+             rgb24 bytes     量化+编码   (ESC P q ...)    / xterm / WezTerm
                                                  │
-                             ANSI 备选:           ├  cmd /c type
-                             每▄ = 2像素          │  (图片: 临时文件→终端)
+                             ANSI 备选:           ├  sys.stdout.buffer.write
+                             每▄ = 2像素          │  (图片 & 视频统一直写)
                              前景+背景真彩色        │
-                                                 └  sys.stdout
-                                                    (视频: 逐帧直写)
+                                                 └  cmd /c type
+                                                    (Sixel 图片走临时文件)
 ```
+
+图片和视频共享完全相同的 FFmpeg → raw RGB → PIL → ANSI/Sixel 管线，色彩一致。
 
 ## 终端支持
 
@@ -115,9 +117,6 @@ video.mp4  →  rawvideo   →  Pillow 量化  →  Sixel 转义码  →  Window
 
 F6T 是外部脚本调用 FFmpeg 管道，有进程间数据拷贝和 Pillow 量化开销。优点是不用编译 FFmpeg，任何环境跑。
 
-## 踩坑记录
-
-见 [`docs/pitfalls.md`](docs/pitfalls.md) — 20+ 个坑的完整复盘。
 
 ## 限制
 
@@ -141,9 +140,6 @@ f6t/
 │   ├── show_img.ps1         # Sixel 图片显示（cmd /c type 直出二进制）
 │   ├── show_img_ansi.ps1    # ANSI 图片显示（薄 wrapper）
 │   └── show_img_ansi.py     # ANSI 图片编码（Python CLI）
-├── docs/
-│   ├── pitfalls.md          # 踩坑全记录
-│   └── sixel-guide.md       # Sixel 协议科普
 └── examples/
     └── demo.png
 ```
