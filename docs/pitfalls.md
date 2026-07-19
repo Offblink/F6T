@@ -117,6 +117,110 @@ ffmpeg -i video.mp4
 
 ---
 
+## 9. kernel32.WriteFile 在 ConPTY 中吞 ESC 字符
+
+**现象**：Windows Terminal 中播视频，ANSI 转义序列全部显示为可见文本：`[38;2;37;37;37m▄[38;2;82;82;82m▄...`，终端疯狂滚动，每"像素"都是乱码。
+
+**排查**：视频输出链路是 `python play_video.py → kernel32.WriteFile(GetStdHandle(-11))`。`GetStdHandle(-11)` 在 WT 的 ConPTY 中返回 pipe 端句柄，`WriteFile` 写入的数据经 ConPTY 转发时 ESC 字符 (`0x1B`) 被剥离或替换为 `?`。
+
+**根因**：ConPTY 对 `WriteFile` 写入的二进制数据可能有转义过滤机制。`WriteFile` 对大数据块的写入行为与 `WriteConsole` 不同，后者才正确触发 ConPTY 的转义序列处理。
+
+**方案**：放弃 `kernel32.WriteFile`，统一用 `sys.stdout.buffer.write()` + `sys.stdout.buffer.flush()`。Python 的 stdout 通过 ConPTY 时 ESC 不会被吞。
+
+---
+
+## 10. PowerShell here-string 嵌套限制
+
+**现象**：`$fstFunc = @"..."@` 内的帮助文本用 `Write-Host @"..."@`，解析时报大量语法错误。
+
+**根因**：PowerShell 的 `@"..."@`（双引号 here-string）不可嵌套。内层 `"@` 直接终止外层 here-string，后续 PS 代码裸露在外导致解析失败。
+
+**方案**：内层改用 `@'...'@`（单引号 here-string）。`'@` 不匹配外层的 `"@`，安全嵌套。
+
+---
+
+## 11. PowerShell 不支持方法参数中的 inline if
+
+**现象**：`$Width = [Math]::Min($tw, if ($Sixel) { 500 } else { 300 })` 解析失败。
+
+**根因**：PowerShell 的表达式语法不允许 `if` 语句出现在方法调用的参数位置。
+
+**方案**：先算出来再传参：
+```powershell
+$cap = if ($Sixel) { 500 } else { 300 }
+$Width = [Math]::Min($tw, $cap)
+```
+
+---
+
+## 12. Python 路径：硬编码版本号 + `ErrorActionPreference Stop`
+
+**现象**：`install.ps1` 在 Python 3.14 环境直接崩溃——`$pyCandidates` 只枚举 3.11-3.13，首个路径不存在触发 `CommandNotFoundException`，`$ErrorActionPreference = "Stop"` 导致脚本终止。
+
+**根因**：两个设计缺陷叠加：(1) 硬编码版本号，任何新版本都崩；(2) `Stop` 模式让一个无害的"路径不存在"变成致命错误。
+
+**方案**：
+- `Test-Path` 预检候选路径，不存在就跳过
+- glob `Python3*` 和 `pythoncore-3*` 目录，按版本降序取第一个
+- 降级 `ErrorActionPreference` 为 `Continue`
+- PATH 回退时用 `Get-Command -All` 并跳过 `WindowsApps` 存根
+
+---
+
+## 13. `cmd /c` 直出管道在 ConPTY 中不可靠
+
+**现象**：尝试去掉临时文件，改成 `cmd /c "python encoder.py ..."` 直出，结果 Sixel 图片无渲染。
+
+**根因**：Pitfall #2 已验证的"`cmd /c type` 可靠"方案被当作"可优化的临时文件"，替换为 `cmd /c python | stdout`。但 `cmd /c` 启动的子进程通过 ConPTY 的管道行为与 `type` 不同，Sixel 二进制数据未正确到达终端渲染层。
+
+**教训**：已验证的 workaround 不要轻易"优化"。临时文件确实是 hack，但它能 work。
+
+---
+
+## 14. Windows Terminal 1.24 Sixel 设置不可见
+
+**现象**：WT 1.24 设置 UI 中找不到 Sixel 开关，手动写 `experimental.enableSixel: true` 到 settings.json 也不生效。
+
+**排查**：WT 1.22 引入 Sixel 为实验特性，需手动开启。1.24 移除了 UI 开关但可能保留了 JSON key——然而手动添加后仍不渲染，说明该 key 已失效或实现有 bug。
+
+**方案**：不依赖 WT 的 Sixel。默认走 ANSI，`-Sixel` 检测终端自报的 env（`$env:TERM` / `$env:TERM_PROGRAM`），不信任手动修改的 JSON。xterm/WezTerm/foot 用户自动放行。
+
+---
+
+## 15. Sixel 能力检测的误判
+
+**现象**：手动给 WT settings.json 加了 `experimental.enableSixel: true` 后，`-Sixel` 检测读 JSON 认为支持 → 输出 Sixel 数据 → 终端不渲染 → 用户看到的是静默失败。
+
+**根因**：JSON 里的 setting 是手动加的，不代表终端真的支持。检测逻辑信任了不可靠的数据源。
+
+**方案**：只信任终端自己设置的 env 变量（`TERM`、`TERM_PROGRAM`），不读配置文件。检测不到就回退 ANSI + 明确提示。
+
+---
+
+## 16. PS 5.1 不支持 `??` null-coalescing 运算符
+
+**现象**：`[Environment]::GetEnvironmentVariable("Path", "User") ?? ""` 在 PS 5.1 报语法错误。
+
+**根因**：`??` 是 PowerShell 7+ 的特性，PS 5.1（Windows 自带）不认。
+
+**方案**：
+```powershell
+$val = [Environment]::GetEnvironmentVariable("Path", "User")
+if (-not $val) { $val = "" }
+```
+
+---
+
+## 17. 图片 Sixel 模式"无输出"——不是 bug，是终端不支持
+
+**现象**：`fst photo.jpg -Sixel` 在 cmd.exe / 旧 WT 中静默无输出，用户以为坏了。
+
+**根因**：Sixel 数据正确生成并写入终端，但终端不支持 Sixel 时二进制转义序列被忽略/丢弃，没有任何可见渲染。
+
+**方案**：默认改为 ANSI。`-Sixel` 加能力检测（见 #15），不满足时明确提示并回退。
+
+---
+
 ## 总结
 
 | 坑 | 级别 | 核心教训 |
@@ -128,5 +232,14 @@ ffmpeg -i video.mp4
 | 内嵌 Python 转义 | 🔴 | .ps1 里不要内嵌代码，抽独立 .py |
 | WindowsApps 存根 | 🟡 | 写死 Python 绝对路径 |
 | 旧 FFmpeg 无 HEVC | 🟡 | 检测 + 提示升级 |
+| ConPTY 吞 ESC | 🔴 | `WriteFile` → `sys.stdout`；conpty ≠ 真控制台 |
+| here-string 嵌套 | 🟡 | 双层字符串用 `@"..."@` 套 `@'...'@` |
+| inline if in method args | 🟡 | PS 不允许，先算再传参 |
+| Python 路径硬编码 | 🔴 | glob 替代枚举，`Test-Path` 预检 |
+| `cmd /c` 直出不可靠 | 🔴 | 已验证的 workaround 不要轻易"优化" |
+| WT Sixel 设置不可见 | 🟡 | 不依赖 UI/json，信终端自报 env |
+| 能力检测误判 | 🟡 | 不读配置文件做检测 |
+| PS 5.1 `??` 不支持 | 🟡 | 用 `if` 替代 |
+| Sixel 静默失败 | 🟡 | 默认 ANSI + 能力检测 + 明确提示 |
 
-*记录于 2026-06-27 · F6T 项目*
+*记录于 2026-06-27 · 更新于 2026-07-19 · F6T 项目*
