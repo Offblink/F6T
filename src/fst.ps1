@@ -91,7 +91,7 @@ $isVideo = @('.mp4','.mkv','.avi','.mov','.webm','.flv','.wmv','.ts') -contains 
 
 # ---- Terminal detection: non-WT defaults to ANSI ----
 if (-not $Ansi -and -not $env:WT_SESSION) {
-    Write-Host "[Auto ANSI — Windows Terminal not detected, Sixel may not render]" -ForegroundColor DarkGray
+    Write-Host "[Auto ANSI -- Windows Terminal not detected, Sixel may not render]" -ForegroundColor DarkGray
     $Ansi = $true
 }
 
