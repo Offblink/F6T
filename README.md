@@ -101,6 +101,14 @@ FFmpeg 解码                          Python 编码                   终端渲
 - `-Sixel` 会检测终端能力，不支持时自动回退并提示
 - cmd.exe 视频自动拉起 Windows Terminal 播放
 
+## 预期效果
+
+![expected output](examples/expected-output.png)
+
+> 上图是 Windows Terminal 下 `f6t examples/demo.png` 的标准输出效果。
+> 部分终端渲染 ANSI 真彩色时可能出现色差（如颜色过饱和/偏暗）。
+> 如果你的效果与上图不符，说明是终端渲染差异，非 F6T 问题。
+
 ## 特性
 
 - **自动适配终端尺寸**：图片和视频默认填满终端窗口，缩放窗口/ctrl+- 实时跟随
@@ -141,7 +149,8 @@ f6t/
 │   ├── show_img_ansi.ps1    # ANSI 图片显示（薄 wrapper）
 │   └── show_img_ansi.py     # ANSI 图片编码（Python CLI）
 └── examples/
-    └── demo.png
+    ├── demo.png
+    └── expected-output.png
 ```
 
 ## License
