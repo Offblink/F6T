@@ -70,14 +70,14 @@ fst-uninstall
 ## 原理
 
 ```
-FFmpeg 解码                Python 编码            终端渲染
+FFmpeg 解码                          Python 编码                   终端渲染
 ─────────────            ─────────────           ─────────
 video.mp4  →  rawvideo   →  Pillow 量化  →  Sixel 转义码  →  Windows Terminal
              rgb24 bytes     + Sixel 编码     (ESC P q ...)    / xterm / WezTerm
                                                  │
-                             ANSI 备选:          ├  cmd /c type
+                             ANSI 备选:           ├  cmd /c type
                              每▄ = 2像素          │  (图片: 临时文件→终端)
-                             前景+背景真彩色      │
+                             前景+背景真彩色        │
                                                  └  sys.stdout
                                                     (视频: 逐帧直写)
 ```
