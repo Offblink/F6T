@@ -145,6 +145,14 @@ def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
         out_h = max(int(orig_h * ratio) // 2 * 2, 2)
     else:
         out_w, out_h = orig_w, max(orig_h // 2 * 2, 2)
+
+    # Cap height so frame fits in terminal window (header + footer take ~3 lines)
+    max_h = 60   # generous; adjust via -w to shrink both dimensions
+    if out_h > max_h:
+        ratio = max_h / out_h
+        out_h = max_h // 2 * 2
+        out_w = max(int(out_w * ratio) // 2 * 2, 2)
+        write_console(f"  (scaled to fit: {out_w}x{out_h})\r\n".encode())
     fps = min(target_fps, info["fps"]) if info["fps"] > 0 else target_fps
     frame_time = 1.0 / fps
     frame_bytes = out_w * out_h * 3
