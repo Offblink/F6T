@@ -98,7 +98,8 @@ if (-not $Width) {
     if ($isVideo) {
         $Width = [Math]::Min($tw, 200)   # cap video at 200 to keep fps reasonable
     } else {
-        $Width = [Math]::Min($tw, if ($Sixel) { 500 } else { 300 })
+        $cap = if ($Sixel) { 500 } else { 300 }
+        $Width = [Math]::Min($tw, $cap)
     }
 }
 
