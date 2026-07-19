@@ -7,6 +7,7 @@
     PowerShell:  fst <file> [-Ansi] [-Width N] ...
     cmd.exe:     fst <file> [-Ansi] [-Width N] ...
 #>
+param(
     [string]$Path,
     [int]$Width,
     [int]$Fps = 15,
@@ -14,6 +15,7 @@
     [switch]$Ansi,
     [switch]$Sixel,
     [switch]$Help
+)
 
 # ---- Resolve install paths ----
 $installDir = "$env:LOCALAPPDATA\F6T"
