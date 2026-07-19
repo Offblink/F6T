@@ -84,8 +84,26 @@ def encode_sixel_file(path: str, max_w: int, max_colors: int) -> bytes:
     Returns:
         Sixel 二进制数据
     """
-    img = Image.open(path).convert("RGB")
-    w, h = img.size
+    import json
+    import subprocess
+
+    # Use FFmpeg to decode — handles ICC profiles and color spaces correctly
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "json", path],
+        capture_output=True, text=True
+    )
+    info = json.loads(probe.stdout)
+    stream = info["streams"][0]
+    w, h = stream["width"], stream["height"]
+
+    result = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", path,
+         "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
+        capture_output=True
+    )
+
+    img = Image.frombytes("RGB", (w, h), result.stdout)
     if w > max_w:
         ratio = max_w / w
         w = max_w
