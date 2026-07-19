@@ -27,6 +27,13 @@ if (-not (Test-Path $pyExe)) {
 }
 
 $pyScript = Join-Path $PSScriptRoot "sixel_encoder.py"
+$tmpBin = Join-Path $env:TEMP "_sixel_tmp.bin"
 
-# Run under cmd /c so binary Sixel goes straight to console (bypasses PS pipeline)
-cmd /c "$pyExe $pyScript `"$ImagePath`" $MaxWidth $MaxColors"
+$err = & $pyExe $pyScript $ImagePath $MaxWidth $MaxColors $tmpBin 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Python error: $err"
+    exit 1
+}
+
+cmd /c type $tmpBin
+Remove-Item $tmpBin -Force -ErrorAction SilentlyContinue
