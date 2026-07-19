@@ -116,6 +116,11 @@ if ($Sixel) {
     }
 } else {
     if ($isVideo) {
+        if (-not $env:WT_SESSION -and -not ($env:TERM -match 'xterm|wezterm|foot')) {
+            Write-Host "[Video needs a modern terminal (Windows Terminal, xterm, WezTerm). cmd.exe will not render correctly.]" -ForegroundColor Red
+            Write-Host "[Install Windows Terminal: winget install Microsoft.WindowsTerminal]" -ForegroundColor DarkGray
+            exit 1
+        }
         $w = if ($Width) { $Width } else { 120 }
         & $py "$src\play_video.py" $Path -a -w $w -f $Fps
     } else {
