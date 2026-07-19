@@ -15,17 +15,25 @@ fst video.mp4 -Width 300 -Fps 24    # 调参数
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-依赖：Python 3 + Pillow + FFmpeg。`install.ps1` 自动检查并提示。
+依赖：Python 3 + Pillow + FFmpeg。`install.ps1` 自动检查并提示缺失项。
 
-安装后会在 PowerShell profile 中加入 `fst` 函数，新开终端即用。
+安装后：
+- **PowerShell**：`fst` 函数写入 profile，新开即用
+- **cmd.exe**：自动注册 `%LOCALAPPDATA%\F6T\bin` 到 PATH，新开即用
+- 源文件拷贝到 `%LOCALAPPDATA%\F6T`，删掉 clone 的目录不受影响
+
+> **注意** PowerShell 需允许脚本执行：
+> ```powershell
+> Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
 
 ## 用法
 
 ```
-fst <文件> [-Ansi] [-Width N] [-Fps N] [-Colors N]
+fst <文件> [-Ansi] [-Width N] [-Fps N] [-Colors N] [-Help]
 ```
 
-`fst` 根据文件后缀自动区分图片/视频。
+`fst` 根据文件后缀自动区分图片/视频。非 Windows Terminal 环境自动切 ANSI 模式（可强制用 `-Ansi`）。
 
 ### 参数
 
@@ -34,7 +42,8 @@ fst <文件> [-Ansi] [-Width N] [-Fps N] [-Colors N]
 | `-Width` | 图/视频 | 图300, 视频200 | 输出宽度（高度等比） |
 | `-Fps` | 视频 | 15 | 目标帧率 |
 | `-Colors` | Sixel 模式 | 32 | 调色板颜色数 (8-256) |
-| `-Ansi` | 全部 | 否 | 切到 ANSI 半块字符模式 |
+| `-Ansi` | 全部 | 自动检测 | 切到 ANSI 半块字符模式 |
+| `-Help` | — | — | 显示帮助 |
 
 ### 示例
 
@@ -49,6 +58,14 @@ fst C:\video.mp4
 fst C:\video.mp4 -Width 300 -Fps 24
 fst C:\video.mp4 -Ansi -Width 100 -Fps 10  # 低配流畅
 ```
+
+### 卸载
+
+```powershell
+fst-uninstall
+```
+
+清除 profile 中的函数、安装目录和 PATH 条目。
 
 ## 原理
 
@@ -74,9 +91,11 @@ video.mp4  →  rawvideo   →  Pillow 量化  →  Sixel 转义码  →  Window
 | WezTerm | ✅ | ✅ |
 | foot | ✅ | ✅ |
 | VS Code / Alacritty | ❌ | ✅ |
-| ConEmu | ❌ | ✅ |
+| ConEmu / cmd.exe | ❌ | ✅ |
 
 Windows Terminal 启用 Sixel：`设置 → 呈现 → 启用 Sixel 图形支持`。
+
+非 Windows Terminal 环境（cmd.exe、ConEmu 等）`fst` 会自动回退到 ANSI 模式，显示 `[Auto ANSI ...]` 提示。
 
 ## 对比 FFmpeg 原生的 iterm2 muxer
 
@@ -91,7 +110,7 @@ F6T 是外部脚本调用 FFmpeg 管道，有进程间数据拷贝和 Pillow 量
 ## 限制
 
 - 无音频
-- Sixel 需终端支持（没开用 `-Ansi`）
+- Sixel 需终端支持（没开用 `-Ansi` 或等自动回退）
 - Python 编码瓶颈：200px 约 15fps
 
 ## 文件结构
@@ -99,16 +118,20 @@ F6T 是外部脚本调用 FFmpeg 管道，有进程间数据拷贝和 Pillow 量
 ```
 f6t/
 ├── README.md
-├── install.ps1
+├── install.ps1              # 安装脚本
 ├── .gitignore
+├── bin/
+│   └── fst.cmd              # cmd.exe 入口
 ├── src/
-│   ├── sixel_encoder.py    # Sixel 编码核心
-│   ├── play_video.py       # 视频播放器
-│   ├── show_img.ps1        # 图片显示
-│   └── show_img_ansi.ps1   # ANSI 备选
+│   ├── fst.ps1              # 主入口（PS & cmd 共用）
+│   ├── sixel_encoder.py     # Sixel 编码核心（支持文件和内存输入）
+│   ├── play_video.py        # 视频播放器（复用 sixel_encoder）
+│   ├── show_img.ps1         # Sixel 图片显示（cmd /c 直出二进制）
+│   ├── show_img_ansi.ps1    # ANSI 图片显示（薄 wrapper）
+│   └── show_img_ansi.py     # ANSI 图片编码（Python CLI）
 ├── docs/
-│   ├── pitfalls.md         # 踩坑全记录
-│   └── sixel-guide.md      # Sixel 协议科普
+│   ├── pitfalls.md          # 踩坑全记录
+│   └── sixel-guide.md       # Sixel 协议科普
 └── examples/
     └── demo.png
 ```
