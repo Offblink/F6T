@@ -87,6 +87,11 @@ if (-not $Path) {
     Write-Host "       fst -Help"
     exit 0
 }
+
+# ---- Detect file type ----
+$ext = [IO.Path]::GetExtension($Path).ToLower()
+$isVideo = @('.mp4','.mkv','.avi','.mov','.webm','.flv','.wmv','.ts') -contains $ext
+
 # ---- Auto-detect terminal width ----
 function Get-TermWidth {
     try { return (Get-Host).UI.RawUI.WindowSize.Width - 4 }
@@ -96,10 +101,23 @@ function Get-TermWidth {
 if (-not $Width) {
     $tw = Get-TermWidth
     if ($isVideo) {
-        $Width = [Math]::Min($tw, 200)   # cap video at 200 to keep fps reasonable
+        $Width = [Math]::Min($tw, 200)
     } else {
         $cap = if ($Sixel) { 500 } else { 300 }
         $Width = [Math]::Min($tw, $cap)
+    }
+}
+
+# ---- Sixel capability check ----
+if ($Sixel) {
+    $sixelOk = $false
+    if ($env:TERM -match 'xterm|wezterm|foot') { $sixelOk = $true }
+    if ($env:TERM_PROGRAM -eq 'WezTerm') { $sixelOk = $true }
+    if (-not $sixelOk) {
+        Write-Host "[Sixel not available -- your terminal does not report Sixel support.]" -ForegroundColor Yellow
+        Write-Host "[Falling back to ANSI. Remove -Sixel flag to suppress this message.]" -ForegroundColor DarkGray
+        Write-Host ""
+        $Sixel = $false
     }
 }
 
@@ -114,7 +132,6 @@ if ($Sixel) {
     if ($isVideo) {
         if (-not $env:WT_SESSION -and -not ($env:TERM -match 'xterm|wezterm|foot')) {
             Write-Host "[Video needs a modern terminal (Windows Terminal, xterm, WezTerm). cmd.exe will not render correctly.]" -ForegroundColor Red
-            Write-Host "[Install Windows Terminal: winget install Microsoft.WindowsTerminal]" -ForegroundColor DarkGray
             exit 1
         }
         & $py "$src\play_video.py" $Path -a -w $Width -f $Fps
