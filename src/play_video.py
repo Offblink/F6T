@@ -8,6 +8,7 @@ Terminal Video Player — Sixel 终端视频播放器
 终端: Windows Terminal 1.22+ (启用 Sixel) / xterm / WezTerm / foot
 """
 
+import re
 import subprocess
 import sys
 import os
@@ -16,6 +17,7 @@ import time
 import json
 import argparse
 from PIL import Image
+from sixel_encoder import encode_sixel_bytes
 
 # ── Console Output (bypass stdout capture) ─────────────────────────
 STD_OUTPUT_HANDLE = -11
@@ -36,55 +38,6 @@ else:
         sys.stdout.buffer.flush()
 
 
-# ── Sixel Encoder (per-frame) ──────────────────────────────────────
-def sixel_char(bits):
-    return chr(0x3F + (bits & 0x3F))
-
-def encode_sixel_data(rgb_bytes, w, h, max_colors=32):
-    img = Image.frombytes("RGB", (w, h), rgb_bytes)
-    if max_colors < 256:
-        img = img.quantize(colors=max_colors, method=Image.Quantize.MEDIANCUT)
-    img = img.convert("RGB")
-    pixels = img.load()
-    
-    color_to_idx = {}
-    palette = []
-    for y in range(h):
-        for x in range(w):
-            c = pixels[x, y]
-            if c not in color_to_idx:
-                color_to_idx[c] = len(palette)
-                palette.append(c)
-    
-    parts = ["\x1bPq"]
-    for i, (r, g, b) in enumerate(palette):
-        parts.append(f"#{i};2;{r};{g};{b}")
-    
-    num_bands = math.ceil(h / 6)
-    for band in range(num_bands):
-        y0 = band * 6
-        freq = {}
-        for y in range(y0, min(y0 + 6, h)):
-            for x in range(w):
-                c = pixels[x, y]
-                freq[c] = freq.get(c, 0) + 1
-        sorted_colors = sorted(freq.keys(), key=lambda c: -freq[c])
-        
-        for color in sorted_colors:
-            ci = color_to_idx[color]
-            parts.append(f"#{ci}")
-            for x in range(w):
-                bits = 0
-                for dy in range(6):
-                    y = y0 + dy
-                    if y < h and pixels[x, y] == color:
-                        bits |= (1 << dy)
-                parts.append(sixel_char(bits))
-            parts.append("$")
-        parts.append("-")
-    
-    parts.append("\x1b\\")
-    return "".join(parts).encode("latin-1")
 
 # ── ANSI Half-Block Encoder (per-frame) ─────────────────────────────
 def encode_ansi_data(rgb_bytes, w, h):
@@ -103,43 +56,51 @@ def encode_ansi_data(rgb_bytes, w, h):
 
 
 # ── Video Probe ────────────────────────────────────────────────────
-def get_video_info(path):
-    """获取视频宽高和帧率，兼容新旧 ffprobe"""
-    # 方法1: ffprobe JSON
+def _check_ffmpeg():
+    """检查 ffmpeg 是否可用，不可用则给出友好提示"""
+    import shutil
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(
+            "FFmpeg not found. Install it first:\n"
+            "  winget install ffmpeg\n"
+            "  or: https://ffmpeg.org/download.html"
+        )
+
+def _parse_ffprobe_json(path):
+    """用 ffprobe JSON 解析视频信息，成功返回 dict，失败返回 None"""
     r = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json",
-         "-show_streams", path],
+         "-show_streams", "-show_format", path],
         capture_output=True, text=True
     )
-    if r.returncode == 0 and r.stdout.strip():
-        try:
-            info = json.loads(r.stdout)
-            vs = next(s for s in info["streams"] if s["codec_type"] == "video")
-            w, h = vs["width"], vs["height"]
-            fps_s = vs.get("r_frame_rate", "30/1")
-            if "/" in fps_s:
-                a, b = fps_s.split("/", 1)
-                fps = int(a) / int(b)
-            else:
-                fps = float(fps_s)
-        except:
-            pass
-    
-    # 方法2: ffmpeg 直接读
-    r2 = subprocess.run(
-        ["ffmpeg", "-i", path],
-        capture_output=True, text=True
-    )
-    stderr = r2.stderr
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    try:
+        info = json.loads(r.stdout)
+        vs = next(s for s in info["streams"] if s["codec_type"] == "video")
+        w, h = vs["width"], vs["height"]
+        fps_s = vs.get("r_frame_rate", "30/1")
+        if "/" in fps_s:
+            a, b = fps_s.split("/", 1)
+            fps = int(a) / int(b) if int(b) != 0 else 30.0
+        else:
+            fps = float(fps_s)
+        dur = None
+        fmt = info.get("format", {})
+        if "duration" in fmt:
+            dur = float(fmt["duration"])
+        return {"width": w, "height": h, "fps": fps, "duration": dur}
+    except Exception:
+        return None
+
+def _parse_ffmpeg_stderr(stderr):
+    """从 ffmpeg -i 的 stderr 回退解析视频信息，成功返回 dict，失败返回 None"""
     w = h = fps = dur = None
     for line in stderr.split("\n"):
         if "Stream #" in line and "Video:" in line:
-            # 找分辨率
-            import re
             m = re.search(r'(\d{2,4})x(\d{2,4})', line)
             if m:
                 w, h = int(m.group(1)), int(m.group(2))
-            # 找帧率
             m = re.search(r'(\d+\.?\d*)\s*fps', line)
             if m:
                 fps = float(m.group(1))
@@ -150,10 +111,39 @@ def get_video_info(path):
             m = re.search(r'Duration:\s*(\d+):(\d+):(\d+)\.(\d+)', line)
             if m:
                 dur = int(m.group(1))*3600 + int(m.group(2))*60 + int(m.group(3)) + int(m.group(4))/100
-    
-    if not w or not h:
-        raise RuntimeError(f"无法解析视频信息。ffmpeg 输出:\n{stderr[:500]}")
-    return {"width": w, "height": h, "fps": fps or 30, "duration": dur or 0}
+    if w and h:
+        return {"width": w, "height": h, "fps": fps or 30, "duration": dur}
+    return None
+
+def get_video_info(path):
+    """获取视频宽高和帧率，优先 ffprobe JSON，回退 ffmpeg -i"""
+    _check_ffmpeg()
+
+    # 方法1: ffprobe JSON（精确）
+    info = _parse_ffprobe_json(path)
+    if info:
+        return {
+            "width": info["width"],
+            "height": info["height"],
+            "fps": info["fps"] or 30,
+            "duration": info["duration"] or 0,
+        }
+
+    # 方法2: ffmpeg -i 回退（兼容旧版）
+    r = subprocess.run(
+        ["ffmpeg", "-i", path],
+        capture_output=True, text=True
+    )
+    info = _parse_ffmpeg_stderr(r.stderr)
+    if info:
+        return {
+            "width": info["width"],
+            "height": info["height"],
+            "fps": info["fps"] or 30,
+            "duration": info["duration"] or 0,
+        }
+
+    raise RuntimeError(f"Cannot parse video info. ffmpeg output:\n{r.stderr[:500]}")
 
 
 # ── Player ─────────────────────────────────────────────────────────
@@ -164,9 +154,9 @@ def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
     if orig_w > max_width:
         ratio = max_width / orig_w
         out_w = max_width
-        out_h = int(orig_h * ratio) // 2 * 2
+        out_h = max(int(orig_h * ratio) // 2 * 2, 2)
     else:
-        out_w, out_h = orig_w, orig_h // 2 * 2
+        out_w, out_h = orig_w, max(orig_h // 2 * 2, 2)
     fps = min(target_fps, info["fps"]) if info["fps"] > 0 else target_fps
     frame_time = 1.0 / fps
     frame_bytes = out_w * out_h * 3
@@ -214,7 +204,7 @@ def play_video(path, max_width=200, target_fps=15, max_colors=32, mode="sixel"):
             if mode == "ansi":
                 frame_data = encode_ansi_data(raw, out_w, out_h)
             else:
-                frame_data = encode_sixel_data(raw, out_w, out_h, max_colors)
+                frame_data = encode_sixel_bytes(raw, out_w, out_h, max_colors)
             
             write_console(b"\x1b[H")
             write_console(frame_data)
@@ -271,11 +261,17 @@ Examples:
   python play-video.py video.mp4 -a -w 80 -f 8  # ANSI minimal
         """
     )
+    def _color_range(val):
+        ival = int(val)
+        if ival < 8 or ival > 256:
+            raise argparse.ArgumentTypeError(f"Colors must be 8-256, got {ival}")
+        return ival
+
     parser.add_argument("video", help="video file path")
     parser.add_argument("-a", "--ansi", action="store_true", help="ANSI half-block mode (no Sixel required)")
     parser.add_argument("-w", "--width", type=int, default=None, help="output width (default: 200 sixel, 120 ansi)")
     parser.add_argument("-f", "--fps", type=int, default=15, help="target fps (default 15)")
-    parser.add_argument("-c", "--colors", type=int, default=32, help="max colors, sixel only (default 32)")
+    parser.add_argument("-c", "--colors", type=_color_range, default=32, help="max colors for sixel, 8-256 (default 32)")
     args = parser.parse_args()
     
     if not os.path.exists(args.video):
