@@ -89,6 +89,12 @@ if (-not $Path) {
 $ext = [IO.Path]::GetExtension($Path).ToLower()
 $isVideo = @('.mp4','.mkv','.avi','.mov','.webm','.flv','.wmv','.ts') -contains $ext
 
+# ---- Terminal detection: non-WT defaults to ANSI ----
+if (-not $Ansi -and -not $env:WT_SESSION) {
+    Write-Host "[Auto ANSI — Windows Terminal not detected, Sixel may not render]" -ForegroundColor DarkGray
+    $Ansi = $true
+}
+
 if ($Ansi) {
     if ($isVideo) {
         $w = if ($Width) { $Width } else { 120 }
